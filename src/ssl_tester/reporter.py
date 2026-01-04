@@ -386,8 +386,6 @@ def generate_text_report(result: CheckResult, severity_filter: Optional[Severity
         # Partial check - no rating, just show what was checked
         lines.append(f"  Partial Check: Only {', '.join(sorted(set(result.only_checks)))} checks performed")
         lines.append(f"  Overall Status: {_format_severity(result.overall_severity)}")
-        if result.summary:
-            lines.append(f"  {result.summary}")
     else:
         # Full check - show rating and summary
         if result.rating:
@@ -396,39 +394,39 @@ def generate_text_report(result: CheckResult, severity_filter: Optional[Severity
                 lines.append("  Downgrade Reasons:")
                 for reason in result.rating_reasons:
                     lines.append(f"    - {reason}")
-    
-    # Notes on Security Best Practices (only if not according to recommendations)
-    hints = []
-    if result.security_check:
-        # HSTS: Recommendation = enabled
-        if not result.security_check.hsts_enabled:
-            hints.append("HSTS not enabled (recommended for better security)")
         
-        # OCSP Stapling: Recommendation = enabled
-        if not result.security_check.ocsp_stapling_enabled:
-            hints.append("OCSP Stapling not enabled (recommended for better performance)")
+        # Notes on Security Best Practices (only if not according to recommendations)
+        hints = []
+        if result.security_check:
+            # HSTS: Recommendation = enabled
+            if not result.security_check.hsts_enabled:
+                hints.append("HSTS not enabled (recommended for better security)")
+            
+            # OCSP Stapling: Recommendation = enabled
+            if not result.security_check.ocsp_stapling_enabled:
+                hints.append("OCSP Stapling not enabled (recommended for better performance)")
+            
+            # TLS Compression: Recommendation = disabled
+            if result.security_check.tls_compression_enabled:
+                hints.append("TLS Compression enabled (should be disabled - CRIME vulnerability)")
+            
+            # Session Resumption: Recommendation = enabled
+            if not result.security_check.session_resumption_enabled:
+                hints.append("Session Resumption not enabled (recommended for better performance)")
         
-        # TLS Compression: Recommendation = disabled
-        if result.security_check.tls_compression_enabled:
-            hints.append("TLS Compression enabled (should be disabled - CRIME vulnerability)")
+        # Note about AIA fetching (informational)
+        if result.chain_check.intermediates_fetched_via_aia:
+            count = result.chain_check.intermediates_fetched_count
+            hints.append(f"{count} intermediate certificate(s) were fetched via AIA because the server did not send a complete certificate chain (configuration issue)")
         
-        # Session Resumption: Recommendation = enabled
-        if not result.security_check.session_resumption_enabled:
-            hints.append("Session Resumption not enabled (recommended for better performance)")
-    
-    # Note about AIA fetching (informational)
-    if result.chain_check.intermediates_fetched_via_aia:
-        count = result.chain_check.intermediates_fetched_count
-        hints.append(f"{count} intermediate certificate(s) were fetched via AIA because the server did not send a complete certificate chain (configuration issue)")
-    
-    if hints:
-        lines.append("  Notes:")
-        for hint in hints:
-            lines.append(f"    - {hint}")
-    
-    lines.append(f"  Overall Status: {_format_severity(result.overall_severity)}")
-    if result.summary:
-        lines.append(f"  {result.summary}")
+        if hints:
+            lines.append("  Notes:")
+            for hint in hints:
+                lines.append(f"    - {hint}")
+        
+        lines.append(f"  Overall Status: {_format_severity(result.overall_severity)}")
+        if result.summary:
+            lines.append(f"  {result.summary}")
     lines.append("=" * 70)
 
     return "\n".join(lines)
