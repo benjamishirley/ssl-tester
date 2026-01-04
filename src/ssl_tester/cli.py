@@ -434,7 +434,7 @@ def perform_ssl_check(
     protocol_check: Optional[ProtocolCheckResult] = None
     if not skip_protocol:
         try:
-            protocol_check = check_protocol_versions(hostname, port, timeout)
+            protocol_check = check_protocol_versions(hostname, port, timeout, service=service_type)
         except Exception as e:
             logger.warning(f"Protocol check failed: {e}")
 
@@ -442,7 +442,7 @@ def perform_ssl_check(
     cipher_check: Optional[CipherCheckResult] = None
     if not skip_cipher:
         try:
-            cipher_check = check_cipher_suites(hostname, port, timeout)
+            cipher_check = check_cipher_suites(hostname, port, timeout, service=service_type)
         except Exception as e:
             logger.warning(f"Cipher check failed: {e}")
 
@@ -466,7 +466,7 @@ def perform_ssl_check(
     security_check: Optional[SecurityCheckResult] = None
     if not skip_security:
         try:
-            security_check = check_security_best_practices(hostname, port, timeout, proxy)
+            security_check = check_security_best_practices(hostname, port, timeout, proxy, service=service_type)
         except Exception as e:
             logger.warning(f"Security check failed: {e}")
 

@@ -197,6 +197,28 @@ def _starttls_pop3(sock: socket.socket, timeout: float) -> None:
         raise ConnectionError(f"STLS command failed: {response[:100]}")
 
 
+def _perform_starttls(sock: socket.socket, service: str, timeout: float) -> None:
+    """
+    Perform STARTTLS handshake for a given service.
+    
+    Args:
+        sock: Connected socket
+        service: Service type (SMTP, IMAP, POP3)
+        timeout: Socket timeout
+        
+    Raises:
+        ConnectionError: If STARTTLS fails
+    """
+    if service == "SMTP":
+        _starttls_smtp(sock, timeout)
+    elif service == "IMAP":
+        _starttls_imap(sock, timeout)
+    elif service == "POP3":
+        _starttls_pop3(sock, timeout)
+    else:
+        raise ConnectionError(f"STARTTLS not implemented for service: {service}")
+
+
 def connect_tls(
     host: str,
     port: int,

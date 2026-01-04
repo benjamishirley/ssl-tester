@@ -35,7 +35,7 @@ PROTOCOL_PRIORITY = {
 
 
 def _test_protocol_version(
-    host: str, port: int, protocol_version: int, timeout: float = 10.0
+    host: str, port: int, protocol_version: int, timeout: float = 10.0, service: Optional[str] = None
 ) -> bool:
     """
     Test if a specific protocol version is supported.
@@ -45,6 +45,7 @@ def _test_protocol_version(
         port: Target port
         protocol_version: SSL/TLS protocol version constant (e.g., ssl.PROTOCOL_TLSv1_2)
         timeout: Connection timeout
+        service: Service type (for STARTTLS support)
 
     Returns:
         True if protocol is supported, False otherwise
@@ -57,6 +58,13 @@ def _test_protocol_version(
         try:
             # Connect
             sock.connect((host, port))
+
+            # Perform STARTTLS if needed
+            if service:
+                from ssl_tester.services import is_starttls_port
+                if is_starttls_port(port, service):
+                    from ssl_tester.network import _perform_starttls
+                    _perform_starttls(sock, service, timeout)
 
             # Create SSL context with specific protocol version
             context = ssl.SSLContext(protocol_version)
@@ -118,7 +126,7 @@ def _get_protocol_name(version: int) -> Optional[str]:
 
 
 def check_protocol_versions(
-    host: str, port: int, timeout: float = 10.0
+    host: str, port: int, timeout: float = 10.0, service: Optional[str] = None
 ) -> ProtocolCheckResult:
     """
     Check which SSL/TLS protocol versions are supported by the server.
@@ -139,47 +147,47 @@ def check_protocol_versions(
 
     # Test TLS 1.3 (if available in Python)
     if hasattr(ssl, "PROTOCOL_TLSv1_3"):
-        if _test_protocol_version(host, port, ssl.PROTOCOL_TLSv1_3, timeout):
+        if _test_protocol_version(host, port, ssl.PROTOCOL_TLSv1_3, timeout, service):
             supported_versions.append(PROTOCOL_TLS13)
     elif hasattr(ssl, "PROTOCOL_TLS_CLIENT"):
         # Python 3.10+ uses PROTOCOL_TLS_CLIENT which supports TLS 1.3
         context = ssl.create_default_context()
         context.minimum_version = ssl.TLSVersion.TLSv1_3
         context.maximum_version = ssl.TLSVersion.TLSv1_3
-        if _test_protocol_with_context(host, port, context, timeout):
+        if _test_protocol_with_context(host, port, context, timeout, service):
             supported_versions.append(PROTOCOL_TLS13)
 
     # Test TLS 1.2
     if hasattr(ssl, "PROTOCOL_TLSv1_2"):
-        if _test_protocol_version(host, port, ssl.PROTOCOL_TLSv1_2, timeout):
+        if _test_protocol_version(host, port, ssl.PROTOCOL_TLSv1_2, timeout, service):
             supported_versions.append(PROTOCOL_TLS12)
     elif hasattr(ssl, "PROTOCOL_TLS"):
         # Fallback for older Python versions
-        if _test_protocol_version(host, port, ssl.PROTOCOL_TLS, timeout):
+        if _test_protocol_version(host, port, ssl.PROTOCOL_TLS, timeout, service):
             supported_versions.append(PROTOCOL_TLS12)
 
     # Test TLS 1.1
     if hasattr(ssl, "PROTOCOL_TLSv1_1"):
-        if _test_protocol_version(host, port, ssl.PROTOCOL_TLSv1_1, timeout):
+        if _test_protocol_version(host, port, ssl.PROTOCOL_TLSv1_1, timeout, service):
             supported_versions.append(PROTOCOL_TLS11)
             deprecated_versions.append(PROTOCOL_TLS11)
 
     # Test TLS 1.0
     if hasattr(ssl, "PROTOCOL_TLSv1"):
-        if _test_protocol_version(host, port, ssl.PROTOCOL_TLSv1, timeout):
+        if _test_protocol_version(host, port, ssl.PROTOCOL_TLSv1, timeout, service):
             supported_versions.append(PROTOCOL_TLS10)
             deprecated_versions.append(PROTOCOL_TLS10)
 
     # Test SSL 3.0
     if hasattr(ssl, "PROTOCOL_SSLv3"):
-        if _test_protocol_version(host, port, ssl.PROTOCOL_SSLv3, timeout):
+        if _test_protocol_version(host, port, ssl.PROTOCOL_SSLv3, timeout, service):
             supported_versions.append(PROTOCOL_SSL3)
             deprecated_versions.append(PROTOCOL_SSL3)
             ssl_versions.append(PROTOCOL_SSL3)
 
     # Test SSL 2.0 (usually not available in modern Python)
     if hasattr(ssl, "PROTOCOL_SSLv2"):
-        if _test_protocol_version(host, port, ssl.PROTOCOL_SSLv2, timeout):
+        if _test_protocol_version(host, port, ssl.PROTOCOL_SSLv2, timeout, service):
             supported_versions.append(PROTOCOL_SSL2)
             deprecated_versions.append(PROTOCOL_SSL2)
             ssl_versions.append(PROTOCOL_SSL2)
@@ -193,7 +201,10 @@ def check_protocol_versions(
 
     # Determine severity
     severity = Severity.OK
-    if ssl_versions:
+    if not supported_versions:
+        # No protocols found - this is a failure
+        severity = Severity.FAIL
+    elif ssl_versions:
         # SSL protocols are critical failures
         severity = Severity.FAIL
     elif deprecated_versions:
@@ -213,7 +224,7 @@ def check_protocol_versions(
 
 
 def _test_protocol_with_context(
-    host: str, port: int, context: ssl.SSLContext, timeout: float = 10.0
+    host: str, port: int, context: ssl.SSLContext, timeout: float = 10.0, service: Optional[str] = None
 ) -> bool:
     """Test protocol using a custom SSL context."""
     try:
@@ -222,6 +233,14 @@ def _test_protocol_with_context(
 
         try:
             sock.connect((host, port))
+            
+            # Perform STARTTLS if needed
+            if service:
+                from ssl_tester.services import is_starttls_port
+                if is_starttls_port(port, service):
+                    from ssl_tester.network import _perform_starttls
+                    _perform_starttls(sock, service, timeout)
+            
             ssl_sock = context.wrap_socket(sock, server_hostname=host)
             ssl_sock.do_handshake()
             negotiated_version = ssl_sock.version()

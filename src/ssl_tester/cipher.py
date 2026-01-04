@@ -71,7 +71,7 @@ def _get_cipher_strength(cipher_name: str) -> str:
 
 
 def _test_cipher_suites(
-    host: str, port: int, protocol_version: int, timeout: float = 10.0
+    host: str, port: int, protocol_version: int, timeout: float = 10.0, service: Optional[str] = None
 ) -> List[str]:
     """
     Test which cipher suites are supported for a given protocol version.
@@ -81,6 +81,7 @@ def _test_cipher_suites(
         port: Target port
         protocol_version: SSL/TLS protocol version constant
         timeout: Connection timeout
+        service: Service type (for STARTTLS support)
 
     Returns:
         List of supported cipher suite names
@@ -95,6 +96,13 @@ def _test_cipher_suites(
         try:
             # Connect
             sock.connect((host, port))
+
+            # Perform STARTTLS if needed
+            if service:
+                from ssl_tester.services import is_starttls_port
+                if is_starttls_port(port, service):
+                    from ssl_tester.network import _perform_starttls
+                    _perform_starttls(sock, service, timeout)
 
             # Create SSL context with specific protocol version
             context = ssl.SSLContext(protocol_version)
@@ -130,7 +138,7 @@ def _test_cipher_suites(
 
 
 def check_cipher_suites(
-    host: str, port: int, timeout: float = 10.0, protocol_versions: Optional[List[int]] = None
+    host: str, port: int, timeout: float = 10.0, protocol_versions: Optional[List[int]] = None, service: Optional[str] = None
 ) -> CipherCheckResult:
     """
     Check which cipher suites are supported by the server.
@@ -168,7 +176,7 @@ def check_cipher_suites(
 
     # Test ciphers for each protocol version
     for protocol_version in protocol_versions:
-        ciphers = _test_cipher_suites(host, port, protocol_version, timeout)
+        ciphers = _test_cipher_suites(host, port, protocol_version, timeout, service)
         all_supported_ciphers.update(ciphers)
 
     # For Python 3.10+, also try PROTOCOL_TLS_CLIENT
@@ -177,6 +185,13 @@ def check_cipher_suites(
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(timeout)
             sock.connect((host, port))
+            
+            # Perform STARTTLS if needed
+            if service:
+                from ssl_tester.services import is_starttls_port
+                if is_starttls_port(port, service):
+                    from ssl_tester.network import _perform_starttls
+                    _perform_starttls(sock, service, timeout)
             
             context = ssl.create_default_context()
             context.check_hostname = False
@@ -213,7 +228,10 @@ def check_cipher_suites(
 
     # Determine severity
     severity = Severity.OK
-    if weak_ciphers:
+    if not supported_ciphers:
+        # No ciphers found - this is a failure
+        severity = Severity.FAIL
+    elif weak_ciphers:
         # Weak ciphers are warnings, but if only weak ciphers are supported, it's a failure
         if len(weak_ciphers) == len(supported_ciphers):
             severity = Severity.FAIL

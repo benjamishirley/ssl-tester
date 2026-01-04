@@ -68,7 +68,7 @@ def check_hsts(hostname: str, timeout: float = 10.0, proxy: Optional[str] = None
     )
 
 
-def check_ocsp_stapling(hostname: str, port: int, timeout: float = 10.0) -> SecurityCheckResult:
+def check_ocsp_stapling(hostname: str, port: int, timeout: float = 10.0, service: Optional[str] = None) -> SecurityCheckResult:
     """
     Check if OCSP Stapling is enabled.
     
@@ -76,6 +76,7 @@ def check_ocsp_stapling(hostname: str, port: int, timeout: float = 10.0) -> Secu
         hostname: Target hostname
         port: Target port
         timeout: Connection timeout
+        service: Service type (for STARTTLS support)
         
     Returns:
         SecurityCheckResult with OCSP Stapling information
@@ -88,6 +89,13 @@ def check_ocsp_stapling(hostname: str, port: int, timeout: float = 10.0) -> Secu
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(timeout)
         sock.connect((hostname, port))
+        
+        # Perform STARTTLS if needed
+        if service:
+            from ssl_tester.services import is_starttls_port
+            if is_starttls_port(port, service):
+                from ssl_tester.network import _perform_starttls
+                _perform_starttls(sock, service, timeout)
         
         context = ssl.create_default_context()
         context.check_hostname = False
@@ -122,7 +130,7 @@ def check_ocsp_stapling(hostname: str, port: int, timeout: float = 10.0) -> Secu
     )
 
 
-def check_tls_compression(hostname: str, port: int, timeout: float = 10.0) -> SecurityCheckResult:
+def check_tls_compression(hostname: str, port: int, timeout: float = 10.0, service: Optional[str] = None) -> SecurityCheckResult:
     """
     Check if TLS compression is enabled (CRIME vulnerability).
     
@@ -130,6 +138,7 @@ def check_tls_compression(hostname: str, port: int, timeout: float = 10.0) -> Se
         hostname: Target hostname
         port: Target port
         timeout: Connection timeout
+        service: Service type (for STARTTLS support)
         
     Returns:
         SecurityCheckResult with TLS compression information
@@ -142,6 +151,13 @@ def check_tls_compression(hostname: str, port: int, timeout: float = 10.0) -> Se
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(timeout)
         sock.connect((hostname, port))
+        
+        # Perform STARTTLS if needed
+        if service:
+            from ssl_tester.services import is_starttls_port
+            if is_starttls_port(port, service):
+                from ssl_tester.network import _perform_starttls
+                _perform_starttls(sock, service, timeout)
         
         context = ssl.create_default_context()
         context.check_hostname = False
@@ -166,7 +182,7 @@ def check_tls_compression(hostname: str, port: int, timeout: float = 10.0) -> Se
     )
 
 
-def check_session_resumption(hostname: str, port: int, timeout: float = 10.0) -> SecurityCheckResult:
+def check_session_resumption(hostname: str, port: int, timeout: float = 10.0, service: Optional[str] = None) -> SecurityCheckResult:
     """
     Check if TLS session resumption is enabled.
     
@@ -174,6 +190,7 @@ def check_session_resumption(hostname: str, port: int, timeout: float = 10.0) ->
         hostname: Target hostname
         port: Target port
         timeout: Connection timeout
+        service: Service type (for STARTTLS support)
         
     Returns:
         SecurityCheckResult with session resumption information
@@ -188,6 +205,13 @@ def check_session_resumption(hostname: str, port: int, timeout: float = 10.0) ->
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(timeout)
         sock.connect((hostname, port))
+        
+        # Perform STARTTLS if needed
+        if service:
+            from ssl_tester.services import is_starttls_port
+            if is_starttls_port(port, service):
+                from ssl_tester.network import _perform_starttls
+                _perform_starttls(sock, service, timeout)
         
         context = ssl.create_default_context()
         context.check_hostname = False
@@ -213,7 +237,7 @@ def check_session_resumption(hostname: str, port: int, timeout: float = 10.0) ->
 
 
 def check_security_best_practices(
-    hostname: str, port: int, timeout: float = 10.0, proxy: Optional[str] = None
+    hostname: str, port: int, timeout: float = 10.0, proxy: Optional[str] = None, service: Optional[str] = None
 ) -> SecurityCheckResult:
     """
     Check all security best practices.
@@ -223,23 +247,26 @@ def check_security_best_practices(
         port: Target port
         timeout: Connection timeout
         proxy: Optional proxy URL
+        service: Service type (for STARTTLS support and HSTS check)
         
     Returns:
         SecurityCheckResult with all security checks
     """
     logger.info(f"Checking security best practices for {hostname}:{port}...")
     
-    # Check HSTS (only for HTTPS/port 443)
-    hsts_result = check_hsts(hostname, timeout, proxy) if port == 443 else SecurityCheckResult()
+    # Check HSTS (only for HTTPS services)
+    # HSTS is an HTTP header, so it's only relevant for HTTPS/HTTP services
+    is_https_service = service == "HTTPS" or (service is None and port == 443)
+    hsts_result = check_hsts(hostname, timeout, proxy) if is_https_service else SecurityCheckResult()
     
     # Check OCSP Stapling
-    ocsp_result = check_ocsp_stapling(hostname, port, timeout)
+    ocsp_result = check_ocsp_stapling(hostname, port, timeout, service)
     
     # Check TLS Compression
-    compression_result = check_tls_compression(hostname, port, timeout)
+    compression_result = check_tls_compression(hostname, port, timeout, service)
     
     # Check Session Resumption
-    resumption_result = check_session_resumption(hostname, port, timeout)
+    resumption_result = check_session_resumption(hostname, port, timeout, service)
     
     # Combine results
     # Only TLS compression is critical (CRIME vulnerability) - HSTS and OCSP Stapling are informational
