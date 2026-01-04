@@ -3,10 +3,10 @@
 import json
 import logging
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from dataclasses import asdict
 
-from ssl_tester.models import CheckResult, Severity, Rating
+from ssl_tester.models import CheckResult, Severity, Rating, CertificateInfo
 
 logger = logging.getLogger(__name__)
 
@@ -1032,6 +1032,67 @@ def _extract_cn_from_dn(dn: str) -> str:
     return dn[:50] + "..." if len(dn) > 50 else dn
 
 
+def _format_dn_multiline(dn: str, indent: str = "    ") -> List[str]:
+    """Format Distinguished Name with each attribute on a separate line."""
+    if not dn:
+        return [f"{indent}(empty)"]
+    
+    lines = []
+    # Parse DN components (format: "CN=value, O=value, C=value")
+    parts = dn.split(",")
+    
+    # Map of common attribute abbreviations to full names
+    attr_names = {
+        "CN": "Common Name",
+        "O": "Organization",
+        "OU": "Organizational Unit",
+        "L": "Locality",
+        "ST": "State/Province",
+        "C": "Country",
+        "E": "Email",
+        "DC": "Domain Component",
+        "STREET": "Street",
+        "SERIALNUMBER": "Serial Number",
+        "UID": "User ID",
+    }
+    
+    for part in parts:
+        part = part.strip()
+        if "=" in part:
+            attr, value = part.split("=", 1)
+            attr = attr.strip()
+            value = value.strip()
+            attr_display = attr_names.get(attr, attr)
+            lines.append(f"{indent}{attr_display} ({attr}): {value}")
+    
+    return lines if lines else [f"{indent}{dn}"]
+
+
+def _format_cert_details(cert: CertificateInfo, cert_type: str = "", indent: str = "  ") -> List[str]:
+    """Format certificate with full subject DN details, issuer, and serial number."""
+    lines = []
+    
+    if cert_type:
+        lines.append(f"{indent}{cert_type}:")
+        detail_indent = indent + "  "
+    else:
+        detail_indent = indent
+    
+    # Subject DN - multiline
+    lines.append(f"{detail_indent}Subject:")
+    lines.extend(_format_dn_multiline(cert.subject, indent=detail_indent + "  "))
+    
+    # Issuer DN - multiline
+    lines.append(f"{detail_indent}Issuer:")
+    lines.extend(_format_dn_multiline(cert.issuer, indent=detail_indent + "  "))
+    
+    # Serial Number
+    if cert.serial_number:
+        lines.append(f"{detail_indent}Serial Number: {cert.serial_number}")
+    
+    return lines
+
+
 def _format_badge(label: str, value: str, status: str = "ok") -> str:
     """Format a badge for the at-a-glance header."""
     icons = {"ok": "✓", "warn": "⚠", "fail": "✗", "info": "ℹ"}
@@ -1309,15 +1370,16 @@ def generate_terminal_report(
             if result.chain_check.root_cert:
                 lines.append(f"  Root: {result.chain_check.root_cert.subject}")
         else:
-            # Compact view: show CN only
-            leaf_cn = _extract_cn_from_dn(result.chain_check.leaf_cert.subject)
-            lines.append(f"  Leaf: {leaf_cn}")
+            # Compact view: show full details for all certificates
+            lines.extend(_format_cert_details(result.chain_check.leaf_cert, cert_type="Leaf"))
+            
             if result.chain_check.intermediate_certs:
-                intermediate_cns = [_extract_cn_from_dn(c.subject) for c in result.chain_check.intermediate_certs]
-                lines.append(f"  Intermediates: {len(result.chain_check.intermediate_certs)} ({', '.join(intermediate_cns[:2])}{'...' if len(intermediate_cns) > 2 else ''})")
+                lines.append(f"  Intermediates: {len(result.chain_check.intermediate_certs)}")
+                for i, intermediate in enumerate(result.chain_check.intermediate_certs, 1):
+                    lines.extend(_format_cert_details(intermediate, cert_type=f"{i}.", indent="    "))
+            
             if result.chain_check.root_cert:
-                root_cn = _extract_cn_from_dn(result.chain_check.root_cert.subject)
-                lines.append(f"  Root: {root_cn}")
+                lines.extend(_format_cert_details(result.chain_check.root_cert, cert_type="Root"))
         
         # Cross-Signing Resolution (compact)
         if result.chain_check.cross_signed_certs:
