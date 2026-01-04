@@ -285,6 +285,79 @@ def _get_css_styles() -> str:
             color: #991b1b;
         }
         
+        .cross-signed-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f0f9ff;
+            border-radius: 8px;
+            border-left: 4px solid #3b82f6;
+        }
+        
+        .cross-signed-section h3 {
+            color: #1e40af;
+            margin-bottom: 15px;
+        }
+        
+        .cross-signed-overview {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: white;
+            border-radius: 6px;
+            line-height: 1.8;
+        }
+        
+        .cross-signed-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            background: white;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        
+        .cross-signed-table th {
+            background: #3b82f6;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+        }
+        
+        .cross-signed-table td {
+            padding: 12px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        
+        .cross-signed-table tr:last-child td {
+            border-bottom: none;
+        }
+        
+        .cross-signed-details {
+            margin-top: 15px;
+            padding: 15px;
+            background: white;
+            border-radius: 6px;
+        }
+        
+        .cross-signed-details ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        
+        .cross-signed-details li {
+            margin: 8px 0;
+            line-height: 1.6;
+        }
+        
+        .cross-signed-status {
+            margin-top: 15px;
+            padding: 15px;
+            background: #d1fae5;
+            border-radius: 6px;
+            border-left: 4px solid #10b981;
+            color: #065f46;
+        }
+        
         footer {
             text-align: center;
             padding: 20px;
@@ -374,6 +447,10 @@ def _generate_certificate_section(result: CheckResult) -> str:
                 </div>
             </div>
     """
+    
+    # Cross-Signed Certificates Section
+    if result.chain_check.cross_signed_certs:
+        html += _generate_cross_signed_section(result.chain_check.cross_signed_certs)
     
     html += """
         </section>
@@ -643,6 +720,85 @@ def _generate_crl_section(result: CheckResult) -> str:
     html += """
         </section>
     """
+    return html
+
+
+def _generate_cross_signed_section(cross_signed_certs) -> str:
+    """Generate cross-signed certificates section HTML."""
+    html = ""
+    
+    for cross_signed in cross_signed_certs:
+        chain_cert = cross_signed.chain_cert
+        trust_root = cross_signed.trust_store_root
+        actual_signer = cross_signed.actual_signer
+        
+        html += f"""
+            <div class="cross-signed-section">
+                <h3>Cross-Signing Resolution</h3>
+                
+                <div class="cross-signed-overview">
+                    <strong>Overview:</strong><br>
+                    The detected certificate represents the same CA identity (same Subject and public key),
+                    but exists in multiple signed variants (cross-signed vs. self-signed).
+                </div>
+                
+                <div class="cross-signed-details">
+                    <strong>Certificate Comparison:</strong>
+                    <table class="cross-signed-table">
+                        <thead>
+                            <tr>
+                                <th>Property</th>
+                                <th>Cross-Signed Variant</th>
+                                <th>Trust Anchor</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Subject</strong></td>
+                                <td>{chain_cert.subject}</td>
+                                <td>{trust_root.subject}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Issuer</strong></td>
+                                <td>{chain_cert.issuer}</td>
+                                <td>{trust_root.issuer}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Serial Number</strong></td>
+                                <td>{chain_cert.serial_number}</td>
+                                <td>{trust_root.serial_number}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Role</strong></td>
+                                <td>Cross-signed</td>
+                                <td>Trust Anchor</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    
+                    <strong>Details:</strong>
+                    <ul>
+                        <li><strong>Server provided variant:</strong> Issuer={chain_cert.issuer}, Serial={chain_cert.serial_number}</li>
+                        <li><strong>Trust store variant:</strong> Issuer={trust_root.issuer}, Serial={trust_root.serial_number}</li>
+                        <li><strong>Actual signer of cross-signed variant:</strong> {actual_signer}</li>
+                    </ul>
+                    
+                    <strong>Resolution:</strong>
+                    <p>The cross-signed certificate was replaced by the self-signed trust anchor because:</p>
+                    <ol>
+                        <li>The trust store already contains a self-signed root for this CA</li>
+                        <li>Browsers and TLS clients always prefer a trust anchor over a cross-signed path</li>
+                    </ol>
+                </div>
+                
+                <div class="cross-signed-status">
+                    <strong>Status: INFO ℹ️</strong><br>
+                    This behavior is normal, RFC-compliant (RFC 4158 path building), and not a security issue.
+                    Both certificates represent the same CA identity and are cryptographically equivalent.
+                </div>
+            </div>
+        """
+    
     return html
 
 
