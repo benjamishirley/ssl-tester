@@ -426,12 +426,29 @@ def _check_single_crl(
                                         logger.debug(f"CRL signature verified with Root CA public key")
                                         # Check if intermediate CA serial number is in this Root CA CRL
                                         try:
-                                            intermediate_serial = int(cert_info.serial_number)
-                                            revoked_serials = [entry.serial_number for entry in crl]
-                                            if intermediate_serial in revoked_serials:
+                                            # Safely convert serial number to int for comparison
+                                            # RFC 5280 allows serial numbers up to 20 bytes (160 bits)
+                                            # Python int can handle this, but we need to handle edge cases
+                                            try:
+                                                intermediate_serial = int(cert_info.serial_number)
+                                                revoked_serials = [entry.serial_number for entry in crl]
+                                                serial_found = intermediate_serial in revoked_serials
+                                                serial_to_check = intermediate_serial
+                                                use_string_comparison = False
+                                            except (ValueError, OverflowError) as e:
+                                                # Fallback: compare as strings for very large serial numbers
+                                                logger.debug(f"Serial number too large for int conversion, using string comparison: {cert_info.serial_number}, error: {e}")
+                                                intermediate_serial_str = str(cert_info.serial_number)
+                                                revoked_serials_str = [str(entry.serial_number) for entry in crl]
+                                                serial_found = intermediate_serial_str in revoked_serials_str
+                                                serial_to_check = intermediate_serial_str
+                                                use_string_comparison = True
+                                            
+                                            if serial_found:
                                                 # Find the revocation entry
                                                 for entry in crl:
-                                                    if entry.serial_number == intermediate_serial:
+                                                    entry_serial = str(entry.serial_number) if use_string_comparison else entry.serial_number
+                                                    if entry_serial == serial_to_check:
                                                         revocation_reason = None
                                                         try:
                                                             reason_ext = entry.extensions.get_extension_for_oid(
@@ -448,7 +465,7 @@ def _check_single_crl(
                                                             revocation_date = entry.revocation_date
                                                         
                                                         logger.warning(
-                                                            f"Intermediate CA serial {intermediate_serial} is REVOKED in Root CA CRL "
+                                                            f"Intermediate CA serial {serial_to_check} is REVOKED in Root CA CRL "
                                                             f"(reason: {reason_str}, date: {revocation_date})"
                                                         )
                                                         
@@ -463,12 +480,12 @@ def _check_single_crl(
                                                             error=f"[Intermediate CA Revocation Check via Root CA CRL from CDP] Certificate is REVOKED (reason: {reason_str}, revoked on: {revocation_date})",
                                                             severity=Severity.FAIL,
                                                         )
-                                                logger.debug(f"Intermediate CA serial {intermediate_serial} not found in Root CA CRL (not revoked)")
+                                                logger.debug(f"Intermediate CA serial {serial_to_check} not found in Root CA CRL (not revoked)")
                                                 # Mark that we checked intermediate CA revocation
                                                 intermediate_ca_revocation_checked = True
                                                 revocation_status = "not_revoked"
                                             else:
-                                                logger.debug(f"Intermediate CA serial {intermediate_serial} not found in Root CA CRL revocation list (not revoked)")
+                                                logger.debug(f"Intermediate CA serial {serial_to_check} not found in Root CA CRL revocation list (not revoked)")
                                                 # Mark that we checked intermediate CA revocation
                                                 intermediate_ca_revocation_checked = True
                                                 revocation_status = "not_revoked"
@@ -487,14 +504,28 @@ def _check_single_crl(
                         if cert_info and not intermediate_ca_revocation_checked:
                             try:
                                 # Get certificate serial number
-                                cert_serial = int(cert_info.serial_number)
+                                # RFC 5280 allows serial numbers up to 20 bytes (160 bits)
+                                # Safely convert to int for comparison, with fallback for very large serials
+                                try:
+                                    cert_serial = int(cert_info.serial_number)
+                                    revoked_serials = [entry.serial_number for entry in crl]
+                                    serial_found = cert_serial in revoked_serials
+                                    serial_to_check = cert_serial
+                                    use_string_comparison = False
+                                except (ValueError, OverflowError) as e:
+                                    # Fallback: compare as strings for very large serial numbers
+                                    logger.debug(f"Serial number too large for int conversion, using string comparison: {cert_info.serial_number}, error: {e}")
+                                    cert_serial_str = str(cert_info.serial_number)
+                                    revoked_serials_str = [str(entry.serial_number) for entry in crl]
+                                    serial_found = cert_serial_str in revoked_serials_str
+                                    serial_to_check = cert_serial_str
+                                    use_string_comparison = True
                                 
-                                # Check if serial is in revoked list
-                                revoked_serials = [entry.serial_number for entry in crl]
-                                if cert_serial in revoked_serials:
+                                if serial_found:
                                     # Find the revocation entry
                                     for entry in crl:
-                                        if entry.serial_number == cert_serial:
+                                        entry_serial = str(entry.serial_number) if use_string_comparison else entry.serial_number
+                                        if entry_serial == serial_to_check:
                                             revocation_reason = None
                                             try:
                                                 reason_ext = entry.extensions.get_extension_for_oid(
@@ -512,7 +543,7 @@ def _check_single_crl(
                                                 revocation_date = entry.revocation_date
                                             
                                             logger.warning(
-                                                f"Certificate serial {cert_serial} is REVOKED in CRL "
+                                                f"Certificate serial {serial_to_check} is REVOKED in CRL "
                                                 f"(reason: {reason_str}, date: {revocation_date})"
                                             )
                                             
@@ -528,7 +559,7 @@ def _check_single_crl(
                                                 severity=Severity.FAIL,
                                             )
                                 
-                                logger.debug(f"Certificate serial {cert_serial} not found in CRL revocation list (not revoked)")
+                                logger.debug(f"Certificate serial {serial_to_check} not found in CRL revocation list (not revoked)")
                                 revocation_status = "not_revoked"
                             except (ValueError, AttributeError) as e:
                                 logger.debug(f"Could not check revocation status: {e}")
@@ -539,20 +570,30 @@ def _check_single_crl(
                         # CRITICAL: Check for CRL issuer mismatch regardless of signature verification result
                         # This must be checked even if signature verification failed or wasn't performed
                         # IMPORTANT: This check happens AFTER signature verification, so we can use the result
+                        # NOTE: Issuer mismatch and signature validity are SEPARATE concerns:
+                        # - A CRL can have a valid signature but wrong issuer (misconfiguration)
+                        # - A CRL can have wrong issuer AND invalid signature (both problems)
+                        # We should report both issues separately, not override signature validity
                         if crl_issuer_mismatch:
                             # Always set error_msg for mismatch - this is a misconfiguration that must be reported
-                            # If signature was valid but mismatch exists, we still report the mismatch
-                            error_msg = (
+                            # Build error message with signature status information
+                            mismatch_error = (
                                 f"CRL-Misconfiguration detected: The CRL is signed by '{crl_issuer}', "
                                 f"but the certificate (Subject: '{cert_info.subject}') was issued by '{cert_info.issuer}'. "
                                 f"The CRL should be signed either by '{cert_info.issuer}' (Certificate Issuer) "
                                 f"or by '{cert_info.subject}' (Certificate Subject for self-signed CRL). "
                                 f"This indicates a faulty CDP configuration."
                             )
-                            logger.warning(error_msg)
-                            # If signature was valid but mismatch exists, treat as invalid for severity calculation
+                            # Add signature status to error message if signature was verified
                             if crl_signature_valid:
-                                crl_signature_valid = False
+                                mismatch_error += f" Note: The CRL signature itself is valid (signed by '{crl_issuer}'), but the issuer does not match the certificate issuer."
+                            elif signature_error:
+                                mismatch_error += f" Additionally: {signature_error}"
+                            
+                            error_msg = mismatch_error
+                            logger.warning(error_msg)
+                            # DO NOT override crl_signature_valid - these are separate issues
+                            # The issuer mismatch is a configuration error, signature validity is a cryptographic verification
                         
                         # Store signature error for reporting (but don't fail the check)
                         if signature_error and not error_msg:
