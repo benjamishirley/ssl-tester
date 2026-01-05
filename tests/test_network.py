@@ -31,10 +31,11 @@ def test_connect_tls_success(mock_ssl_context, mock_socket_class):
     with patch("ssl_tester.network.socket.getaddrinfo") as mock_getaddrinfo:
         mock_getaddrinfo.return_value = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("127.0.0.1", 443))]
 
-        result_leaf, result_chain = connect_tls("example.com", 443, timeout=10.0)
+        result_leaf, result_chain, result_ip = connect_tls("example.com", 443, timeout=10.0)
 
         assert result_leaf == leaf_cert
         assert result_chain == chain_certs
+        assert result_ip == "127.0.0.1"
         mock_sock.connect.assert_called_once()
         mock_ssl_sock.do_handshake.assert_called_once()
 

@@ -42,7 +42,7 @@ def test_cli_check_success(
     from datetime import datetime, timedelta
 
     # Mock TLS connection
-    mock_connect_tls.return_value = (b"leaf_cert", [b"intermediate_cert"])
+    mock_connect_tls.return_value = (b"leaf_cert", [b"intermediate_cert"], "127.0.0.1")
 
     # Mock certificate parsing
     leaf_cert_info = CertificateInfo(
@@ -204,7 +204,7 @@ def test_cli_with_insecure_mode(
     from datetime import datetime, timedelta
     from pathlib import Path
 
-    mock_connect_tls.return_value = (b"leaf_cert", [b"intermediate_cert"])
+    mock_connect_tls.return_value = (b"leaf_cert", [b"intermediate_cert"], "127.0.0.1")
     
     leaf_cert_info = CertificateInfo(
         subject="CN=example.com",
@@ -292,7 +292,7 @@ def test_cli_with_ca_bundle(
     from datetime import datetime, timedelta
     from pathlib import Path
 
-    mock_connect_tls.return_value = (b"leaf_cert", [b"intermediate_cert"])
+    mock_connect_tls.return_value = (b"leaf_cert", [b"intermediate_cert"], "127.0.0.1")
     
     leaf_cert_info = CertificateInfo(
         subject="CN=example.com",
@@ -383,7 +383,7 @@ def test_cli_with_proxy(
     from ssl_tester.models import CertificateInfo, ChainCheckResult, HostnameCheckResult, ValidityCheckResult
     from datetime import datetime, timedelta
 
-    mock_connect_tls.return_value = (b"leaf_cert", [])
+    mock_connect_tls.return_value = (b"leaf_cert", [], "127.0.0.1")
     
     leaf_cert_info = CertificateInfo(
         subject="CN=example.com",
