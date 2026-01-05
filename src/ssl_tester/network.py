@@ -38,6 +38,9 @@ def _extract_chain_via_openssl(host: str, port: int, timeout: float, ignore_host
         # Add servername if not ignoring hostname
         if not ignore_hostname:
             openssl_cmd.extend(["-servername", host])
+            logger.debug(f"Using SNI with hostname: {host} (OpenSSL fallback)")
+        else:
+            logger.debug(f"SNI disabled for OpenSSL fallback (ignore_hostname=True)")
         
         # For ignore_hostname, we still want to get certificates even if validation fails
         # OpenSSL will output certificates regardless of validation status
@@ -318,6 +321,10 @@ def connect_tls(
 
         # Wrap socket
         server_hostname = None if ignore_hostname else host
+        if server_hostname:
+            logger.debug(f"Using SNI with hostname: {server_hostname} (connecting to IP: {ip_address})")
+        else:
+            logger.debug(f"SNI disabled (server_hostname=None) - connecting to IP: {ip_address} (resolved from hostname: {host})")
         ssl_sock = context.wrap_socket(sock, server_hostname=server_hostname)
         ssl_sock.do_handshake()
         logger.debug("TLS handshake completed")
