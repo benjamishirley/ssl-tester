@@ -11,6 +11,74 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+def _create_ssl_context_with_ca_bundle(
+    insecure: bool = False,
+    ignore_hostname: bool = False,
+    ca_bundle: Optional[Path] = None,
+) -> ssl.SSLContext:
+    """
+    Create SSL context with proper CA certificate loading.
+    
+    On macOS, this tries to load certifi certificates first, then falls back
+    to default context. This fixes the issue where Python's create_default_context()
+    doesn't automatically load macOS Keychain certificates.
+    
+    Args:
+        insecure: Accept self-signed certificates
+        ignore_hostname: Ignore hostname verification
+        ca_bundle: Custom CA bundle path
+    
+    Returns:
+        Configured SSL context
+    """
+    context = ssl.create_default_context()
+    
+    # On macOS, try to load certifi certificates first
+    # This fixes the issue where create_default_context() doesn't load Keychain
+    if sys.platform == "darwin":
+        try:
+            import certifi
+            certifi_path = certifi.where()
+            context.load_verify_locations(certifi_path)
+            logger.debug(f"Loaded CA certificates from certifi: {certifi_path}")
+        except ImportError:
+            logger.debug("certifi not available, using default context")
+        except Exception as e:
+            logger.debug(f"Error loading certifi certificates: {e}")
+        
+        # Also try Homebrew OpenSSL CA bundle paths (if Homebrew OpenSSL is installed)
+        # This helps when Python was compiled with Homebrew OpenSSL
+        homebrew_ca_paths = [
+            "/usr/local/etc/openssl/cert.pem",  # Intel Mac
+            "/opt/homebrew/etc/openssl/cert.pem",  # Apple Silicon
+        ]
+        for ca_path in homebrew_ca_paths:
+            if Path(ca_path).exists():
+                try:
+                    context.load_verify_locations(ca_path)
+                    logger.debug(f"Loaded CA certificates from Homebrew OpenSSL: {ca_path}")
+                    break
+                except Exception as e:
+                    logger.debug(f"Error loading CA certificates from {ca_path}: {e}")
+    
+    # Configure context based on parameters
+    if insecure:
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        logger.warning("Insecure mode enabled - certificate validation disabled")
+    elif ignore_hostname:
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_REQUIRED
+        logger.debug("Hostname verification disabled for certificate extraction")
+    
+    # Load custom CA bundle if provided (takes precedence)
+    if ca_bundle:
+        context.load_verify_locations(str(ca_bundle))
+        logger.debug(f"Using custom CA bundle: {ca_bundle}")
+    
+    return context
+
+
 def _extract_chain_via_openssl(host: str, port: int, timeout: float, ignore_hostname: bool = False, server_name: Optional[str] = None) -> List[bytes]:
     """
     Extract certificate chain using OpenSSL command line tool.
@@ -316,20 +384,12 @@ def connect_tls(
                 raise ConnectionError(f"STARTTLS not implemented for service: {service}")
             logger.debug("STARTTLS handshake completed")
 
-        # Create SSL context
-        context = ssl.create_default_context()
-        if insecure:
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
-            logger.warning("Insecure mode enabled - certificate validation disabled")
-        elif ignore_hostname:
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_REQUIRED
-            logger.debug("Hostname verification disabled for certificate extraction")
-
-        if ca_bundle:
-            context.load_verify_locations(str(ca_bundle))
-            logger.debug(f"Using custom CA bundle: {ca_bundle}")
+        # Create SSL context with proper CA certificate loading
+        context = _create_ssl_context_with_ca_bundle(
+            insecure=insecure,
+            ignore_hostname=ignore_hostname,
+            ca_bundle=ca_bundle,
+        )
 
         # Wrap socket - SNI Logik:
         # Wenn server_name explizit gesetzt ist, diesen verwenden (auch bei ignore_hostname=True)
