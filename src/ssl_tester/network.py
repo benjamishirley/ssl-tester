@@ -11,7 +11,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-def _extract_chain_via_openssl(host: str, port: int, timeout: float, ignore_hostname: bool = False) -> List[bytes]:
+def _extract_chain_via_openssl(host: str, port: int, timeout: float, ignore_hostname: bool = False, server_name: Optional[str] = None) -> List[bytes]:
     """
     Extract certificate chain using OpenSSL command line tool.
     This is a fallback when getpeercert_chain() is not available.
@@ -21,6 +21,7 @@ def _extract_chain_via_openssl(host: str, port: int, timeout: float, ignore_host
         port: Target port
         timeout: Connection timeout
         ignore_hostname: Ignore hostname verification
+        server_name: SNI hostname (defaults to host if not specified)
     
     Returns:
         List of DER-encoded certificates (excluding leaf)
@@ -35,10 +36,13 @@ def _extract_chain_via_openssl(host: str, port: int, timeout: float, ignore_host
             "-showcerts",
         ]
         
-        # Add servername if not ignoring hostname
+        # SNI-Logik: Wenn server_name explizit gesetzt ist, diesen verwenden
+        # Wenn nicht gesetzt und ignore_hostname=False, host verwenden
+        # Wenn ignore_hostname=True und kein server_name, kein SNI senden
+        sni_hostname = server_name if server_name is not None else host
         if not ignore_hostname:
-            openssl_cmd.extend(["-servername", host])
-            logger.debug(f"Using SNI with hostname: {host} (OpenSSL fallback)")
+            openssl_cmd.extend(["-servername", sni_hostname])
+            logger.debug(f"Using SNI with hostname: {sni_hostname} (OpenSSL fallback)")
         else:
             logger.debug(f"SNI disabled for OpenSSL fallback (ignore_hostname=True)")
         
@@ -231,6 +235,7 @@ def connect_tls(
     ipv6: bool = False,
     ignore_hostname: bool = False,
     service: Optional[str] = None,
+    server_name: Optional[str] = None,
 ) -> Tuple[bytes, List[bytes], str]:
     """
     Establish TLS connection and extract certificate chain.
@@ -238,7 +243,7 @@ def connect_tls(
     Supports both direct TLS and STARTTLS for SMTP, IMAP, POP3.
 
     Args:
-        host: Target hostname
+        host: Target hostname (for DNS resolution and connection)
         port: Target port
         timeout: Connection timeout in seconds
         insecure: Accept self-signed certificates
@@ -246,6 +251,7 @@ def connect_tls(
         ipv6: Prefer IPv6
         ignore_hostname: Ignore hostname verification (for error recovery)
         service: Service type (e.g., "SMTP", "IMAP", "POP3") - used to determine STARTTLS
+        server_name: SNI hostname (defaults to host if not specified, None to disable SNI)
 
     Returns:
         Tuple of (leaf_certificate_der, chain_certificates_der_list, ip_address)
@@ -319,12 +325,22 @@ def connect_tls(
             context.load_verify_locations(str(ca_bundle))
             logger.debug(f"Using custom CA bundle: {ca_bundle}")
 
-        # Wrap socket
-        server_hostname = None if ignore_hostname else host
-        if server_hostname:
-            logger.debug(f"Using SNI with hostname: {server_hostname} (connecting to IP: {ip_address})")
+        # Wrap socket - SNI Logik:
+        # Wenn server_name explizit gesetzt ist, diesen verwenden (auch bei ignore_hostname=True)
+        # Wenn server_name None ist, aber host gesetzt ist, host verwenden (Standard-Verhalten)
+        # Nur wenn server_name explizit auf None gesetzt wird UND ignore_hostname=True, kein SNI senden
+        if server_name is not None:
+            # Expliziter SNI-Wert wurde übergeben
+            server_hostname = server_name
+            logger.debug(f"Using explicit SNI hostname: {server_hostname} (connecting to IP: {ip_address})")
+        elif ignore_hostname:
+            # Kein expliziter SNI, aber ignore_hostname=True -> kein SNI (für Fehler-Recovery)
+            server_hostname = None
+            logger.debug(f"SNI disabled (ignore_hostname=True, no explicit server_name) - connecting to IP: {ip_address} (resolved from hostname: {host})")
         else:
-            logger.debug(f"SNI disabled (server_hostname=None) - connecting to IP: {ip_address} (resolved from hostname: {host})")
+            # Standard: hostname als SNI verwenden
+            server_hostname = host
+            logger.debug(f"Using SNI with hostname: {server_hostname} (connecting to IP: {ip_address})")
         ssl_sock = context.wrap_socket(sock, server_hostname=server_hostname)
         ssl_sock.do_handshake()
         logger.debug("TLS handshake completed")
@@ -372,7 +388,7 @@ def connect_tls(
                 pass
             
             # Try to extract chain via OpenSSL
-            chain_certs_der = _extract_chain_via_openssl(host, port, timeout, ignore_hostname)
+            chain_certs_der = _extract_chain_via_openssl(host, port, timeout, ignore_hostname, server_name)
             
             if chain_certs_der:
                 logger.info(f"Successfully extracted {len(chain_certs_der)} intermediate certificate(s) via OpenSSL")

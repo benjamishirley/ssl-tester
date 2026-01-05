@@ -75,6 +75,7 @@ def perform_ssl_check(
     no_redirects: bool = False,
     max_crl_bytes: int = 20 * 1024 * 1024,
     service: Optional[str] = None,
+    server_name: Optional[str] = None,
     progress_callback: Optional[Callable[[str, Optional[int], Optional[int]], None]] = None,
 ) -> CheckResult:
     """
@@ -159,9 +160,14 @@ def perform_ssl_check(
     leaf_cert_info: Optional[CertificateInfo] = None
     ip_address: Optional[str] = None
 
+    # Determine SNI hostname: use server_name if provided, otherwise use hostname
+    sni_hostname = server_name if server_name else hostname
+    
     try:
         leaf_cert_der, chain_certs_der, ip_address = connect_tls(
-            hostname, port, timeout, insecure, ca_bundle, ipv6, service=service_type
+            hostname, port, timeout, insecure, ca_bundle, ipv6, 
+            service=service_type,
+            server_name=sni_hostname,
         )
     except ssl.SSLError as e:
         error_msg = str(e)
@@ -170,8 +176,13 @@ def perform_ssl_check(
         logger.debug("Attempting to retrieve certificate despite SSL error...")
         
         try:
+            # Bei Fehler-Recovery: SNI trotzdem senden (wichtig für LibreSSL)
+            # Verwende server_name falls gesetzt, sonst hostname
+            recovery_sni = server_name if server_name else hostname
             leaf_cert_der, chain_certs_der, ip_address = connect_tls(
-                hostname, port, timeout, insecure=True, ca_bundle=ca_bundle, ipv6=ipv6, ignore_hostname=True, service=service_type
+                hostname, port, timeout, insecure=True, ca_bundle=ca_bundle, 
+                ipv6=ipv6, ignore_hostname=True, service=service_type,
+                server_name=recovery_sni,
             )
             logger.debug("Successfully retrieved certificate (validation bypassed for certificate extraction)")
         except Exception as e2:
@@ -625,6 +636,7 @@ def check(
         help="Only run specified checks (comma-separated). Available: chain, hostname, crl, ocsp, protocol, cipher, vulnerabilities, security. Example: --only-checks chain,hostname,protocol",
     ),
     service: Optional[str] = typer.Option(None, "--service", help="Service type (HTTPS, SMTP, IMAP, POP3, FTP, LDAP, XMPP, RDP, PostgreSQL, MySQL). Auto-detected from port if not specified."),
+    server_name: Optional[str] = typer.Option(None, "--servername", help="SNI hostname (defaults to target hostname). Use to override SNI when connecting via IP or different hostname."),
     html: Optional[Path] = typer.Option(None, "--html", help="Generate HTML report and save to file"),
     csv: Optional[Path] = typer.Option(None, "--csv", help="Generate CSV report and save to file"),
     color: bool = typer.Option(True, "--color/--no-color", help="Enable/disable colored output"),
@@ -769,6 +781,7 @@ def check(
                     no_redirects=no_redirects,
                     max_crl_bytes=max_crl_bytes,
                     service=service,
+                    server_name=server_name,
                     progress_callback=update_progress,
                 )
         except Exception as e:
@@ -793,6 +806,7 @@ def check(
                 no_redirects=no_redirects,
                 max_crl_bytes=max_crl_bytes,
                 service=service,
+                server_name=server_name,
             )
     else:
         result = perform_ssl_check(
@@ -814,6 +828,7 @@ def check(
         no_redirects=no_redirects,
         max_crl_bytes=max_crl_bytes,
         service=service,
+        server_name=server_name,
     )
 
     # Generate and output report
@@ -915,6 +930,7 @@ def batch(
                 no_redirects=no_redirects,
                 max_crl_bytes=max_crl_bytes,
                 service=service,
+                server_name=None,  # Batch mode uses hostname as SNI (default behavior)
             )
         
         # Process batch with progress bar
@@ -1042,6 +1058,7 @@ def compare(
         no_redirects=False,
         max_crl_bytes=20 * 1024 * 1024,
         service=None,
+        server_name=None,  # Compare command uses hostname as SNI (default behavior)
     )
     
     result2 = perform_ssl_check(
@@ -1063,6 +1080,7 @@ def compare(
         no_redirects=False,
         max_crl_bytes=20 * 1024 * 1024,
         service=None,
+        server_name=None,  # Compare command uses hostname as SNI (default behavior)
     )
     
     # Generate comparison report
