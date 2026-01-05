@@ -1042,9 +1042,10 @@ def _is_truly_self_signed(cert: x509.Certificate) -> bool:
         # Use verify_directly_issued_by which handles all signature algorithms correctly
         try:
             cert.verify_directly_issued_by(cert)
-            logger.debug(f"Certificate '{cert_info.subject}' is truly self-signed (signature verified)")
+            # Don't log each successful verification - too verbose
             return True
         except Exception as e:
+            # Only log failures for cross-signed certificates (less verbose)
             logger.debug(f"Certificate '{cert_info.subject}' has subject==issuer but signature verification failed: {e}. This is likely a cross-signed certificate.")
             return False
     except Exception as e:
@@ -1393,7 +1394,7 @@ def load_root_certs_from_trust_store(
                     subject_dn = cert_info.subject
                     issuer_map[subject_dn] = cert_der
                     root_count += 1
-                    logger.debug(f"Added root certificate to issuer_map: {subject_dn}")
+                    # Don't log each individual certificate - too verbose
             except Exception as e:
                 logger.debug(f"Error parsing certificate from trust store: {e}")
         

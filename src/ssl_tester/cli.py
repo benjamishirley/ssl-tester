@@ -389,10 +389,13 @@ def perform_ssl_check(
     if not insecure:
         try:
             root_certs_from_trust_store = load_root_certs_from_trust_store(ca_bundle=ca_bundle)
+            added_count = 0
             for subject_dn, cert_der in root_certs_from_trust_store.items():
                 if subject_dn not in issuer_map:
                     issuer_map[subject_dn] = cert_der
-                    logger.debug(f"Added trust store root to issuer_map for CRL validation: {subject_dn}")
+                    added_count += 1
+            if added_count > 0:
+                logger.debug(f"Added {added_count} trust store root certificate(s) to issuer_map for CRL validation")
             
             # Add cross-signers from trust store for cross-signed certificate CRL validation
             # This allows CRL signature verification for CRLs signed by cross-signers (e.g., GlobalSign Root CA)
@@ -668,9 +671,15 @@ def check(
         logging.getLogger('ssl_tester.chain').setLevel(logging.DEBUG)
         logging.getLogger('ssl_tester.certificate').setLevel(logging.DEBUG)
         logging.getLogger('ssl_tester.network').setLevel(logging.DEBUG)
+        # Suppress verbose HTTP client debug logs (httpcore/httpx)
+        logging.getLogger('httpcore').setLevel(logging.WARNING)
+        logging.getLogger('httpx').setLevel(logging.WARNING)
     else:
         # Suppress INFO logs by default - only show WARNING and above
         logging.getLogger().setLevel(logging.WARNING)
+        # Also suppress HTTP client logs
+        logging.getLogger('httpcore').setLevel(logging.WARNING)
+        logging.getLogger('httpx').setLevel(logging.WARNING)
         # Route INFO logs to stderr if needed (but suppress by default)
         # This keeps the report output clean
 

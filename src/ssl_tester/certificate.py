@@ -97,7 +97,6 @@ def _load_cert_with_cache(
     
     # Check cache first
     if cache_key in _certificate_cache:
-        logger.debug(f"Certificate cache hit: {cache_key[:16]}...")
         return _certificate_cache[cache_key], []
     
     # Load certificate and capture warnings
@@ -111,7 +110,6 @@ def _load_cert_with_cache(
     
     # Store in cache
     _certificate_cache[cache_key] = cert
-    logger.debug(f"Certificate cached: {cache_key[:16]}...")
     
     return cert, captured_warnings
 
@@ -178,7 +176,7 @@ def parse_certificate(cert_der: bytes) -> Tuple[CertificateInfo, List[Certificat
                 elif isinstance(name, x509.IPAddress):
                     san_ip_addresses.append(str(name.value))
         except x509.ExtensionNotFound:
-            logger.debug("No SubjectAlternativeName extension found")
+            pass
 
         # CRL Distribution Points
         crl_dps: List[str] = []
@@ -189,7 +187,7 @@ def parse_certificate(cert_der: bytes) -> Tuple[CertificateInfo, List[Certificat
                     if isinstance(full_name, x509.UniformResourceIdentifier):
                         crl_dps.append(full_name.value)
         except x509.ExtensionNotFound:
-            logger.debug("No CRLDistributionPoints extension found")
+            pass
 
         # Authority Information Access
         ocsp_urls: List[str] = []
@@ -204,7 +202,7 @@ def parse_certificate(cert_der: bytes) -> Tuple[CertificateInfo, List[Certificat
                     if isinstance(access_desc.access_location, x509.UniformResourceIdentifier):
                         ca_issuers_urls.append(access_desc.access_location.value)
         except x509.ExtensionNotFound:
-            logger.debug("No AuthorityInformationAccess extension found")
+            pass
 
         # Signature algorithm
         signature_algorithm = cert.signature_algorithm_oid._name
@@ -270,7 +268,7 @@ def parse_certificate(cert_der: bytes) -> Tuple[CertificateInfo, List[Certificat
         if ku_ext.value.crl_sign:
             key_usage.append("crl_sign")
     except x509.ExtensionNotFound:
-        logger.debug("No KeyUsage extension found")
+        pass
 
     # Extended Key Usage
     extended_key_usage: Optional[List[str]] = None
@@ -278,7 +276,7 @@ def parse_certificate(cert_der: bytes) -> Tuple[CertificateInfo, List[Certificat
         eku_ext = cert.extensions.get_extension_for_oid(x509.oid.ExtensionOID.EXTENDED_KEY_USAGE)
         extended_key_usage = [eku._name for eku in eku_ext.value]
     except x509.ExtensionNotFound:
-        logger.debug("No ExtendedKeyUsage extension found")
+        pass
 
     # Basic Constraints
     basic_constraints: Optional[dict] = None
@@ -289,7 +287,7 @@ def parse_certificate(cert_der: bytes) -> Tuple[CertificateInfo, List[Certificat
             "path_length": bc_ext.value.path_length,
         }
     except x509.ExtensionNotFound:
-        logger.debug("No BasicConstraints extension found")
+        pass
 
     # Authority Key Identifier
     authority_key_identifier: Optional[str] = None
@@ -298,7 +296,7 @@ def parse_certificate(cert_der: bytes) -> Tuple[CertificateInfo, List[Certificat
         if aki_ext.value.key_identifier:
             authority_key_identifier = aki_ext.value.key_identifier.hex()
     except x509.ExtensionNotFound:
-        logger.debug("No AuthorityKeyIdentifier extension found")
+        pass
 
     # Subject Key Identifier
     subject_key_identifier: Optional[str] = None
@@ -306,7 +304,7 @@ def parse_certificate(cert_der: bytes) -> Tuple[CertificateInfo, List[Certificat
         ski_ext = cert.extensions.get_extension_for_oid(x509.oid.ExtensionOID.SUBJECT_KEY_IDENTIFIER)
         subject_key_identifier = ski_ext.value.digest.hex()
     except x509.ExtensionNotFound:
-        logger.debug("No SubjectKeyIdentifier extension found")
+        pass
 
     cert_info = CertificateInfo(
         subject=subject,

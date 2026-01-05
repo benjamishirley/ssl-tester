@@ -78,7 +78,8 @@ def check_crl_reachability(
             if issuer_map:
                 issuer_cert_der = issuer_map.get(cert_info.issuer)
                 if issuer_cert_der:
-                    logger.debug(f"Found issuer certificate for CRL verification: cert issuer='{cert_info.issuer}'")
+                    # Don't log each issuer certificate lookup - too verbose
+                    pass
                 else:
                     logger.debug(f"Issuer certificate not found in issuer_map for: '{cert_info.issuer}' (available keys: {list(issuer_map.keys())[:3]}...)")
 
@@ -91,7 +92,7 @@ def check_crl_reachability(
                     if not root_cert_der and cert_der_map and root_cert_info.fingerprint_sha256 in cert_der_map:
                         root_cert_der = cert_der_map[root_cert_info.fingerprint_sha256]
 
-            logger.debug(f"Calling _check_single_crl with issuer_cert_der={'present' if issuer_cert_der else 'None'}, root_cert_der={'present' if root_cert_der else 'None'}")
+            # Don't log function call details - too verbose
             result = _check_single_crl(
                 crl_url,
                 timeout,
@@ -353,15 +354,14 @@ def _check_single_crl(
                                 crl_signer_cert_info, _ = parse_certificate(crl_signer_cert_der)
                                 crl_signer_public_key = crl_signer_cert.public_key()
                                 
-                                logger.debug(f"CRL signer cert subject: '{crl_signer_cert_info.subject}'")
-                                logger.debug(f"Certificate issuer (for reference): '{cert_info.issuer if cert_info else 'N/A'}'")
+                                # Don't log cert subject/issuer details - too verbose
                                 
                                 # Try different verification methods based on cryptography version
                                 # cryptography 45.0.0+ uses is_signature_valid(), older versions use verify_direct_signature()
                                 if hasattr(crl, 'is_signature_valid'):
                                     # Newer API (cryptography 45.0.0+)
                                     crl_signature_valid = crl.is_signature_valid(crl_signer_public_key)
-                                    logger.debug(f"is_signature_valid returned: {crl_signature_valid}")
+                                    # Don't log signature validation result - only log failures below
                                     if not crl_signature_valid:
                                         # Include diagnostic info in error message
                                         signature_error = f"CRL signature is invalid (CRL issuer: '{crl_issuer}', CRL signer cert subject: '{crl_signer_cert_info.subject}')"
@@ -490,12 +490,12 @@ def _check_single_crl(
                                                             error=f"[Intermediate CA Revocation Check via Root CA CRL from CDP] Certificate is REVOKED (reason: {reason_str}, revoked on: {revocation_date})",
                                                             severity=Severity.FAIL,
                                                         )
-                                                logger.debug(f"Intermediate CA serial {serial_to_check} not found in Root CA CRL (not revoked)")
+                                                # Don't log "not revoked" status - too verbose
                                                 # Mark that we checked intermediate CA revocation
                                                 intermediate_ca_revocation_checked = True
                                                 revocation_status = "not_revoked"
                                             else:
-                                                logger.debug(f"Intermediate CA serial {serial_to_check} not found in Root CA CRL revocation list (not revoked)")
+                                                # Don't log "not revoked" status - too verbose
                                                 # Mark that we checked intermediate CA revocation
                                                 intermediate_ca_revocation_checked = True
                                                 revocation_status = "not_revoked"
@@ -569,7 +569,7 @@ def _check_single_crl(
                                                 severity=Severity.FAIL,
                                             )
                                 
-                                logger.debug(f"Certificate serial {serial_to_check} not found in CRL revocation list (not revoked)")
+                                # Don't log "not revoked" status - too verbose
                                 revocation_status = "not_revoked"
                             except (ValueError, AttributeError) as e:
                                 logger.debug(f"Could not check revocation status: {e}")
