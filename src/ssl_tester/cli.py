@@ -173,21 +173,26 @@ def perform_ssl_check(
         error_msg = str(e)
         connection_error = f"SSL/TLS error: {error_msg}"
         logger.warning(f"SSL error during connection: {error_msg}")
-        logger.debug("Attempting to retrieve certificate despite SSL error...")
         
-        try:
-            # Bei Fehler-Recovery: SNI trotzdem senden (wichtig für LibreSSL)
-            # Verwende server_name falls gesetzt, sonst hostname
-            recovery_sni = server_name if server_name else hostname
-            leaf_cert_der, chain_certs_der, ip_address = connect_tls(
-                hostname, port, timeout, insecure=True, ca_bundle=ca_bundle, 
-                ipv6=ipv6, ignore_hostname=True, service=service_type,
-                server_name=recovery_sni,
-            )
-            logger.debug("Successfully retrieved certificate (validation bypassed for certificate extraction)")
-        except Exception as e2:
-            logger.error(f"Failed to retrieve certificate: {e2}")
-            connection_error = f"{connection_error}; Certificate retrieval failed: {e2}"
+        # Only attempt recovery if insecure mode was explicitly enabled by user
+        if insecure:
+            logger.debug("Attempting to retrieve certificate despite SSL error (insecure mode enabled)...")
+            try:
+                # Bei Fehler-Recovery: SNI trotzdem senden (wichtig für LibreSSL)
+                # Verwende server_name falls gesetzt, sonst hostname
+                recovery_sni = server_name if server_name else hostname
+                leaf_cert_der, chain_certs_der, ip_address = connect_tls(
+                    hostname, port, timeout, insecure=insecure, ca_bundle=ca_bundle, 
+                    ipv6=ipv6, ignore_hostname=True, service=service_type,
+                    server_name=recovery_sni,
+                )
+                logger.debug("Successfully retrieved certificate (validation bypassed for certificate extraction)")
+            except Exception as e2:
+                logger.error(f"Failed to retrieve certificate: {e2}")
+                connection_error = f"{connection_error}; Certificate retrieval failed: {e2}"
+        else:
+            logger.debug("SSL error occurred - use --insecure flag to bypass certificate validation and retrieve certificate")
+            # Don't attempt recovery if insecure mode is not explicitly enabled
     except Exception as e:
         connection_error = f"Connection error: {e}"
         logger.error(f"Connection failed: {e}")

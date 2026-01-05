@@ -742,6 +742,10 @@ def _simplify_ssl_error(error_msg: str) -> str:
     """
     import re
     
+    # Check for specific error types that need better explanation
+    if "Missing Authority Key Identifier" in error_msg or "missing.*authority.*key.*identifier" in error_msg.lower():
+        return "Missing Authority Key Identifier (AKI) in certificate chain - Intermediate certificate missing AKI extension (server-side issue, OpenSSL 3.x requires AKI)"
+    
     # Extract common SSL error patterns
     patterns = [
         r"IP address mismatch[^']*'([^']+)'",
