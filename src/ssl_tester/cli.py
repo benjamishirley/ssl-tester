@@ -175,11 +175,13 @@ def perform_ssl_check(
         logger.warning(f"SSL error during connection: {error_msg}")
         
         # Only attempt recovery if insecure mode was explicitly enabled by user
+        # Don't automatically enable ignore_hostname - only use it if insecure is explicitly set
         if insecure:
             logger.debug("Attempting to retrieve certificate despite SSL error (insecure mode enabled)...")
             try:
                 # Bei Fehler-Recovery: SNI trotzdem senden (wichtig für LibreSSL)
                 # Verwende server_name falls gesetzt, sonst hostname
+                # Only ignore hostname if insecure is explicitly enabled
                 recovery_sni = server_name if server_name else hostname
                 leaf_cert_der, chain_certs_der, ip_address = connect_tls(
                     hostname, port, timeout, insecure=insecure, ca_bundle=ca_bundle, 
@@ -193,6 +195,7 @@ def perform_ssl_check(
         else:
             logger.debug("SSL error occurred - use --insecure flag to bypass certificate validation and retrieve certificate")
             # Don't attempt recovery if insecure mode is not explicitly enabled
+            # Don't automatically enable ignore_hostname either
     except Exception as e:
         connection_error = f"Connection error: {e}"
         logger.error(f"Connection failed: {e}")
