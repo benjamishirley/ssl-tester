@@ -507,7 +507,7 @@ The tool automatically loads all root certificates (self-signed) from the trust 
 
 ```bash
 # Clone repository
-git clone git@github.com:benjamishirley/ssl-tester.git
+git clone git@github.com:skiweg1985/ssl-tester.git
 cd ssl-tester
 
 # Create virtual environment

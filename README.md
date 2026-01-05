@@ -88,7 +88,7 @@ Whether you're managing a corporate PKI, auditing SSL/TLS configurations, or tro
 
 ```bash
 # If from Git
-git clone git@github.com:benjamishirley/ssl-tester.git
+git clone git@github.com:skiweg1985/ssl-tester.git
 cd ssl-tester
 
 # Or simply use the directory if already present
